@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#7660be">
+  <title>Flower draw — draw in the air</title>
+  <meta name="description" content="Turn your fingertip into a flower brush. A simple webcam drawing playground.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <header><a class="brand" href="./"><span aria-hidden="true">✿</span> Flower draw</a><span class="header-note">A little room to bloom.</span></header>
+    <section class="intro"><h1>Draw flowers in the air.</h1><p>Point only your index finger, then move to make flowers.</p></section>
+    <section class="studio" aria-label="Flower drawing studio">
+      <div class="stage" id="stage">
+        <video id="video" playsinline muted aria-label="Mirrored camera preview"></video>
+        <canvas id="canvas" width="1280" height="960" aria-label="Flower drawing canvas"></canvas>
+        <div id="cursor" aria-hidden="true"></div>
+        <div class="status"><span id="status-dot"></span><span id="status" role="status" aria-live="polite">Ready to bloom</span></div>
+        <div class="welcome" id="welcome"><div class="flower-mark" aria-hidden="true">✿</div><h2>A wave of your hand.<br>A trail of little flowers.</h2><p>Turn on your camera to draw with your finger,<br>or try drawing with your mouse or touch.</p><button class="primary" id="start">Turn on camera</button><button class="text-button" id="try">Try without camera</button></div>
+        <div class="stage-note" id="stage-note">Your flowers will appear here</div>
+      </div>
+      <aside class="tools" aria-label="Brush controls">
+        <div><h2>Main flower color</h2><div class="palette" id="palette"></div></div>
+        <div class="size-control"><label for="size">Cluster size <output id="size-value">20</output></label><input id="size" type="range" min="12" max="36" value="20"></div>
+        <div class="tool-actions"><button id="undo" disabled>↶ &nbsp; Undo</button><button id="clear" disabled>Clear canvas</button><button class="save" id="save" disabled>Save drawing <span aria-hidden="true">↓</span></button></div>
+        <div class="camera-controls"><button id="camera-toggle" hidden>Stop camera</button><button id="pause" hidden>Pause drawing</button></div>
+        <p class="privacy">Camera stays on your device.<br>Only flowers leave with you.</p>
+      </aside>
+    </section>
+    <p id="error" class="error" role="alert" hidden></p>
+    <footer><div><span aria-hidden="true">☝</span><p><strong>Point to draw</strong><br>Keep your other fingers curled.</p></div><div><span aria-hidden="true">✊</span><p><strong>Bend to stop</strong><br>Bend your index or raise another finger.</p></div><div><span aria-hidden="true">✿</span><p><strong>Make it yours</strong><br>Pick a color, trace a little joy.</p></div></footer>
+  </main>
+  <script type="module" src="app.mjs"></script>
+</body>
+</html>
