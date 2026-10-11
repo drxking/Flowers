@@ -20,6 +20,23 @@ export function isPointing(hand) {
     return other && other.cosine > -0.3 && other.reach <= 1.05;
   });
 }
+export function headPose(landmarks, width, height) {
+  if (!landmarks?.[33] || !landmarks?.[263]) return null;
+  let a={x:(1-landmarks[33].x)*width,y:landmarks[33].y*height};
+  let b={x:(1-landmarks[263].x)*width,y:landmarks[263].y*height};
+  if (a.x>b.x) [a,b]=[b,a];
+  const scale=Math.hypot(b.x-a.x,b.y-a.y);
+  if (!Number.isFinite(scale) || scale<5) return null;
+  return {x:(a.x+b.x)/2,y:(a.y+b.y)/2,scale,angle:Math.atan2(b.y-a.y,b.x-a.x)};
+}
+// Map points between two head poses, preserving position relative to the eyes.
+export function followHead(point, from, to) {
+  if (!from || !to) return {...point};
+  const x=point.x-from.x, y=point.y-from.y;
+  const angle=to.angle-from.angle, scale=to.scale/from.scale;
+  return {x:to.x+(x*Math.cos(angle)-y*Math.sin(angle))*scale,
+    y:to.y+(x*Math.sin(angle)+y*Math.cos(angle))*scale};
+}
 export function flowerCluster(size, color, palette, random = Math.random) {
   const companions = palette.filter(value => value !== color);
   const start = Math.floor(random() * companions.length);

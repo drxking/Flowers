@@ -1,21 +1,36 @@
-import { flower, flowerCluster, isPointing } from './engine.mjs';
+import { flower, flowerCluster, isPointing, headPose, followHead } from './engine.mjs';
 const $ = id => document.getElementById(id);
 const canvas = $('canvas'), ctx = canvas.getContext('2d'), video = $('video'), stage = $('stage');
 const colors = [['Lilac','#9672d4'],['Rose','#ef729e'],['Red','#e95264'],['Orange','#ed9350'],['Yellow','#edbd45'],['Green','#77ad82'],['Blue','#6c9ed8'],['White','#ffffff']];
 let color = colors[0][1], size = 20, strokes = [], current = null, last = null, smoothed = null;
 let stream = null, landmarker = null, modelPromise = null, frame = 0, lastVideoTime = -1, lastInference = 0;
 let starting = false, paused = false, pointerId = null;
+let faceLandmarker = null, anchor = null, head = null, faceVisible = false;
 const setStatus = (text, live = false) => { if ($('status').textContent !== text) $('status').textContent = text; $('status-dot').classList.toggle('live', live); };
 function updateActions() { for (const id of ['undo','clear','save']) $(id).disabled = strokes.length === 0; }
 function showError(message) { $('error').textContent = message; $('error').hidden = !message; }
 function dismissWelcome() { $('welcome').hidden = true; $('stage-note').textContent = stream ? 'Point only your index finger. Keep your middle, ring, and little fingers curled.' : 'Drag your mouse or finger to draw flowers.'; }
 function endStroke() { current = null; last = null; smoothed = null; }
+function renderDot(dot) {
+  const p=followHead({x:dot.x*canvas.width,y:dot.y*canvas.height},anchor,head);
+  const scale=anchor && head ? head.scale/anchor.scale : 1;
+  const angle=anchor && head ? head.angle-anchor.angle : 0;
+  flower(ctx,p.x,p.y,dot.size*1.6*scale,dot.color,dot.rotation+angle);
+}
+function flattenDrawing() {
+  if (anchor && head) for (const stroke of strokes) for (const dot of stroke) {
+    const p=followHead({x:dot.x*canvas.width,y:dot.y*canvas.height},anchor,head);
+    dot.x=p.x/canvas.width; dot.y=p.y/canvas.height;
+    dot.size*=head.scale/anchor.scale; dot.rotation+=head.angle-anchor.angle;
+  }
+  anchor=null; head=null; faceVisible=false;
+}
 function stamp(x, y) {
   for (const bloom of flowerCluster(size, color, colors.map(([,hex])=>hex))) {
     const px = x + bloom.x * 1.6, py = y + bloom.y * 1.6;
     const dot = { ...bloom, x: px / canvas.width, y: py / canvas.height };
     // Store each bloom so undo and redraw preserve the exact colors and sizes.
-    current.push(dot); flower(ctx, px, py, bloom.size * 1.6, bloom.color, bloom.rotation);
+    current.push(dot); renderDot(dot);
   }
 }
 function drawAt(x, y) {
@@ -31,7 +46,7 @@ function drawAt(x, y) {
   }
   if (steps) last = {x:start.x + (x-start.x)*steps*spacing/distance, y:start.y + (y-start.y)*steps*spacing/distance};
 }
-function redraw() { ctx.clearRect(0,0,canvas.width,canvas.height); for (const stroke of strokes) for (const d of stroke) flower(ctx,d.x*canvas.width,d.y*canvas.height,d.size*1.6,d.color,d.rotation); updateActions(); }
+function redraw() { ctx.clearRect(0,0,canvas.width,canvas.height); if (!stream || faceVisible) for (const stroke of strokes) for (const d of stroke) renderDot(d); updateActions(); }
 for (const [name, hex] of colors) {
   const b = document.createElement('button'); b.className = 'swatch'; b.style.setProperty('--color',hex);
   b.setAttribute('aria-label',name); b.title = name; b.setAttribute('aria-pressed',String(hex === color));
@@ -46,15 +61,22 @@ canvas.addEventListener('pointerdown',e=>{ if (stream || (e.pointerType === 'mou
 canvas.addEventListener('pointermove',e=>{ if (e.pointerId !== pointerId) return; const p=pointerPosition(e); drawAt(p.x,p.y); });
 for (const event of ['pointerup','pointercancel','lostpointercapture']) canvas.addEventListener(event,()=>{ pointerId=null; endStroke(); if(!stream) setStatus('Mouse / touch mode'); });
 async function loadModel() {
-  if (landmarker) return landmarker;
+  if (landmarker && faceLandmarker) return;
   if (!modelPromise) modelPromise = (async()=>{
-    const {HandLandmarker,FilesetResolver} = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/vision_bundle.mjs');
+    const {HandLandmarker,FaceLandmarker,FilesetResolver} = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/vision_bundle.mjs');
     const files = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/wasm');
     const options = {baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task'}, runningMode:'VIDEO',numHands:1,minHandDetectionConfidence:.6,minTrackingConfidence:.6};
-    try { return await HandLandmarker.createFromOptions(files,{...options,baseOptions:{...options.baseOptions,delegate:'GPU'}}); }
-    catch { return await HandLandmarker.createFromOptions(files,options); }
+    async function create(Task, config) {
+      try { return await Task.createFromOptions(files,{...config,baseOptions:{...config.baseOptions,delegate:'GPU'}}); }
+      catch { return await Task.createFromOptions(files,config); }
+    }
+    const hands=await create(HandLandmarker,options);
+    try {
+      const face=await create(FaceLandmarker,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task'},runningMode:'VIDEO',numFaces:1,minFaceDetectionConfidence:.5,minTrackingConfidence:.5});
+      return {hands,face};
+    } catch(error) { hands.close(); throw error; }
   })().catch(error=>{ modelPromise=null; throw error; });
-  landmarker = await modelPromise; return landmarker;
+  const models = await modelPromise; landmarker=models.hands; faceLandmarker=models.face;
 }
 async function startCamera() {
   if (starting || stream) return;
@@ -64,12 +86,13 @@ async function startCamera() {
     if (!navigator.mediaDevices?.getUserMedia) throw new Error('Camera needs HTTPS or localhost. You can still try mouse / touch drawing.');
     setStatus('Waiting for camera permission');
     pendingStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:1280},height:{ideal:960}},audio:false});
-    setStatus('Loading hand tracking…'); await loadModel();
+    setStatus('Loading hand and head tracking…'); await loadModel();
     video.srcObject=pendingStream; await video.play(); stream=pendingStream;
     canvas.height=Math.round(canvas.width*video.videoHeight/video.videoWidth); stage.style.aspectRatio=`${video.videoWidth} / ${video.videoHeight}`; redraw();
     video.style.display='block'; stage.classList.add('camera-on'); paused=false; lastVideoTime=-1;
     dismissWelcome(); $('camera-toggle').hidden=false; $('camera-toggle').textContent='Stop camera'; $('pause').hidden=false; $('pause').textContent='Pause drawing';
-    setStatus('Show your hand',true); frame=requestAnimationFrame(track);
+    $('head-status').hidden=false; $('head-status').textContent='Show your face to attach flowers';
+    setStatus('Show your face and hand',true); frame=requestAnimationFrame(track);
   } catch (error) {
     pendingStream?.getTracks().forEach(t=>t.stop()); stream=null; video.srcObject=null;
     const messages = {NotAllowedError:'Camera permission was denied. Allow camera access in your browser, then try again.',NotFoundError:'No camera found. Connect a webcam, or try mouse / touch drawing.',NotReadableError:'Camera is busy. Close other apps using it, then try again.'};
@@ -77,21 +100,34 @@ async function startCamera() {
   } finally { starting=false; $('start').disabled=false; $('camera-toggle').disabled=false; }
 }
 function stopCamera() {
+  flattenDrawing();
   cancelAnimationFrame(frame); stream?.getTracks().forEach(t=>t.stop()); stream=null; video.srcObject=null; video.style.display='none'; stage.classList.remove('camera-on');
   $('cursor').style.display='none'; endStroke(); $('camera-toggle').textContent='Turn on camera'; $('pause').hidden=true; dismissWelcome(); setStatus('Mouse / touch mode');
+  $('head-status').hidden=true; redraw();
 }
 function track(now) {
   if (!stream) return;
   try {
     if (video.readyState >= 2 && video.currentTime !== lastVideoTime && now-lastInference >= 40) {
       lastInference=now; lastVideoTime=video.currentTime;
+      const pose=headPose(faceLandmarker.detectForVideo(video,now).faceLandmarks[0],canvas.width,canvas.height);
+      faceVisible=Boolean(pose);
+      if (pose) {
+        head=pose; if (!anchor) anchor={...pose};
+        $('head-status').textContent='Flowers follow your head';
+      } else {
+        endStroke(); $('head-status').textContent='Face lost · drawing paused';
+      }
+      redraw();
       const hand=landmarker.detectForVideo(video,now).landmarks[0];
       if (hand) {
         const p={x:(1-hand[8].x)*canvas.width,y:hand[8].y*canvas.height};
         smoothed=smoothed ? {x:smoothed.x*.35+p.x*.65,y:smoothed.y*.35+p.y*.65} : p;
         $('cursor').style.display='block'; $('cursor').style.left=`${smoothed.x/canvas.width*100}%`; $('cursor').style.top=`${smoothed.y/canvas.height*100}%`;
-        if (!paused && isPointing(hand)) { drawAt(smoothed.x,smoothed.y); setStatus('Drawing flowers',true); }
-        else { endStroke(); setStatus(paused ? 'Drawing paused' : 'Point only your index finger',true); }
+        if (!paused && faceVisible && isPointing(hand)) {
+          const brush=followHead(smoothed,head,anchor);
+          drawAt(brush.x,brush.y); setStatus('Drawing flowers',true);
+        } else { endStroke(); setStatus(paused ? 'Drawing paused' : !faceVisible ? 'Show your face to draw' : 'Point only your index finger',true); }
       } else { endStroke(); $('cursor').style.display='none'; setStatus(paused ? 'Drawing paused' : 'Show your hand',true); }
     }
     frame=requestAnimationFrame(track);
@@ -106,5 +142,5 @@ $('save').addEventListener('click',()=>{
   else { c.fillStyle='#eae5f6'; c.fillRect(0,0,output.width,output.height); }
   c.drawImage(canvas,0,0); const a=document.createElement('a'); a.download='my-flower-drawing.png'; a.href=output.toDataURL('image/png'); a.click();
 });
-window.addEventListener('pagehide',()=>{ cancelAnimationFrame(frame); stream?.getTracks().forEach(t=>t.stop()); landmarker?.close(); });
+window.addEventListener('pagehide',()=>{ cancelAnimationFrame(frame); stream?.getTracks().forEach(t=>t.stop()); landmarker?.close(); faceLandmarker?.close(); });
 document.addEventListener('visibilitychange',()=>{ if(document.hidden && stream) stopCamera(); });

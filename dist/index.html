@@ -11,15 +11,16 @@
 <body>
   <main>
     <header><a class="brand" href="./"><span aria-hidden="true">✿</span> Flower draw</a><span class="header-note">A little room to bloom.</span></header>
-    <section class="intro"><h1>Draw flowers in the air.</h1><p>Point only your index finger, then move to make flowers.</p></section>
+    <section class="intro"><h1>Draw flowers in the air.</h1><p>Draw with your index finger. Your flowers move with your head.</p></section>
     <section class="studio" aria-label="Flower drawing studio">
       <div class="stage" id="stage">
         <video id="video" playsinline muted aria-label="Mirrored camera preview"></video>
         <canvas id="canvas" width="1280" height="960" aria-label="Flower drawing canvas"></canvas>
         <div id="cursor" aria-hidden="true"></div>
         <div class="status"><span id="status-dot"></span><span id="status" role="status" aria-live="polite">Ready to bloom</span></div>
-        <div class="welcome" id="welcome"><div class="flower-mark" aria-hidden="true">✿</div><h2>A wave of your hand.<br>A trail of little flowers.</h2><p>Turn on your camera to draw with your finger,<br>or try drawing with your mouse or touch.</p><button class="primary" id="start">Turn on camera</button><button class="text-button" id="try">Try without camera</button></div>
+        <div class="welcome" id="welcome"><div class="flower-mark" aria-hidden="true">✿</div><h2>A wave of your hand.<br>A trail of little flowers.</h2><p>Turn on your camera to draw flowers that follow your head,<br>or try drawing with your mouse or touch.</p><button class="primary" id="start">Turn on camera</button><button class="text-button" id="try">Try without camera</button></div>
         <div class="stage-note" id="stage-note">Your flowers will appear here</div>
+        <div class="head-status" id="head-status" role="status" hidden></div>
       </div>
       <aside class="tools" aria-label="Brush controls">
         <div><h2>Main flower color</h2><div class="palette" id="palette"></div></div>
